@@ -15,7 +15,6 @@ import List
 import Ratio
 import Char
 import Maybe
-import Data.HashTable
 
 rules :: [ String ]
 rules = ["Rules:",
@@ -102,21 +101,21 @@ rolls state rv =
             let d = digitToInt s in
                 if d > rv then [] else
                    rolls' ss (s:ds) (rv - d) ++
-                   rolls' ss    ds       rv
+                   rolls' ss (  ds) (rv    )
         simpler a b =
-            if (length a) < (length b) then LT
-            else if (length a) > (length b) then GT
-            else if a < b then LT
-            else if a == b then EQ
-            else GT
+            if (length a) < (length b) then LT else
+            if (length a) > (length b) then GT else
+            if a < b then LT else
+            if a > b then GT else
+            EQ
                 
---- Wind up a list of ptables into a single ptable
+--- Fold up a list of ptables into a single ptable
 --- by using the given combining operator entry-by-entry.
---- Give an error if there are no tables to combine, because
---- things may be different then.
-ptable_combine :: (Vtype -> Vtype -> Vtype) -> [ Ptable ] -> Ptable
-ptable_combine  _        [t] = t
-ptable_combine op (t1:t2:ts) = zipWith op t1 $ ptable_combine op (t2:ts)
+--- Give an error if there are no tables to combine;
+--- the way this is used that should never happen.
+ptable_fold :: (Vtype -> Vtype -> Vtype) -> [ Ptable ] -> Ptable
+ptable_fold  _ (     [t]) = t
+ptable_fold op (t1:t2:ts) = zipWith op t1 $ ptable_fold op (t2:ts)
 
 --- The value of a state at a given scoring threshold on a
 --- given roll is the maximum value of its child states at
@@ -126,90 +125,15 @@ ptable_combine op (t1:t2:ts) = zipWith op t1 $ ptable_combine op (t2:ts)
 value :: String -> Ptable
 value state =
     let sc = (score state) in
-        ptable_combine (+)
+        ptable_fold (+)
                        [ map (* (dprob ! rv))
                              (max_value sc (rolls state rv)) |
                          rv <- [2..12] ]
     where
-       max_value sc rs = ptable_combine max $
+       max_value sc rs = ptable_fold max $
                          sc : [ value (state \\ r) | r <- rs ]
-            
+
 {-
-
-
-    &ptable value(string state) {
-	if (!is_uninit(&tt[state]))
-	    return &tt[state];
-	printf("...valuing %s\n", state);
-	&ptable s = &score(state);
-	ptable v;
-	if (exact)
-	    v = (ptable){0, ...};
-	else
-	    v = (ptable){imprecise(0, 28), ...};
-	for (int rv = 2; rv <= 12; rv++) {
-	    &ptable try_roll(&ptable minv, int r, string s0, int j) {
-		if (j >= length(s0))
-		    return &minv;
-		int d = s0[j] - '0';
-		int r0 = r - d;
-		if (r0 < 0)
-		    return &minv;
-                global string del(string state, int j) {
-                    return
-                        substr(state, 0, j) +
-                        substr(state, j + 1, length(state) - j - 1);
-                }
-		string s1 = del(s0, j);
-		void minimize(&ptable t)
-		    /* For each threshold value, take
-		       the *maximum* probability out
-		       of t and minv */
-		{
-		    for (int i = 0; i < dim(t); i++)
-			minv[i] = max(minv[i], t[i]);
-		}
-		if (r0 == 0) {
-		    if (false)
-			File::fprintf(stderr, ": %s %d = %s\n", state, rv, s1);
-		    int d = dim(rt[state][rv]);
-		    rt[state][rv][d] = s1;
-		    minimize(&value(s1));
-		} else {
-		    minimize(&try_roll(&minv, r0, s1, j));
-		}
-		minimize(&try_roll(&minv, r, s0, j + 1));
-		return &minv;
-	    }
-	    ptable s0 = s;
-	    &ptable t = &try_roll(&s0, rv, state, 0);
-	    for (int i = 0; i < dim(t); i++)
-		v[i] += t[i] * dprob[rv];
-	}
-	tt[state] = v;
-	return &v;
-    }
-
-    printf("initializing...\n");
-    value(digits);
-    printf("...done!\n");
-    rtab = rt;
-    return &tt;
-}
-
-
-string sminus(string s, string t) {
-    int j = 0;
-    string r = "";
-    for (int i = 0; i < length(s); i++) {
-	while(j < length(t) && s[i] > t[j])
-	    j++;
-	if (j < length(t) && s[i] == t[j])
-	    continue;
-	r += String::new(s[i]);
-    }
-    return r;
-}
 
 string get_input(string prompt) {
     while (true) {
@@ -227,38 +151,8 @@ string get_input(string prompt) {
 }
 
 
-&ptable[string] read_tt() {
-    ptable[string] loadtt;
-    twixt(file f = open("digitgame-table.txt", "r"); close(f)) {
-	for (int i = 0; i < rollsize - 1; i++) {
-	    string key = chomp(fgets(f));
-	    ptable t = { [j] {
-		assert(fscanf(f, "%g\n", &(vtype v)) == 1,
-		       "bad ptable entry at %s/%d", key, j);
-		return v;
-	    }};
-	    loadtt[key] = t;
-	}
-    }
-    return &loadtt;
-}
-
-void write_tt(&ptable[string] tt) {
-    twixt(file f = open("digitgame-table.txt", "w"); close(f)) {
-	&string[*] keys = &hash_keys(tt);
-	assert(dim(keys) == rollsize - 1, "strange ttable size %d", dim(keys));
-	for (int i = 0; i < dim(keys); i++) {
-	    fprintf(f, "%s\n", keys[i]);
-	    &ptable t = &tt[keys[i]];
-	    assert(dim(t) == rollsize, "strange table size");
-	    for (int j = 0; j < dim(t); j++)
-		fprintf(f, "  %v\n", t[j]);
-	}
-    }
-}
-
 void play(bool autoroll) {
-    &ptable[string] tt = &read_tt();
+    &ptable[string] tt = &value_all(true, true);
     dev_srandom(64);
     string cur = digits;
     int threshold;
@@ -339,46 +233,6 @@ void play(bool autoroll) {
 	}
     }
 }
-
-if (dim(argv) > 0) {
-    argdesc argd = {
-	args = {
-	    { var = (arg_var.arg_flag) &(bool manual_roll = false),
-	      name = "roll-manually",
-	      abbr = 'r',
-	      desc = "Player inputs each die roll."
-	    },
-	    { var = (arg_var.arg_flag) &(bool generate = false),
-	      name = "generate",
-	      abbr = 'g',
-	      desc = "Generate needed tables."
-	    },
-	    { var = (arg_var.arg_flag) &(bool value_score = false),
-	      name = "generate-score",
-	      desc = "Tables give expected score, not win prob."
-	    },
-	    { var = (arg_var.arg_flag) &(bool value_imprecise = false),
-	      name = "generate-imprecise",
-	      desc = "Tables are from 28-bit floating point, not rationals."
-	    },
-	},
-    };
-    parseargs(&argd, &argv);
-    if (generate) {
-	if (manual_roll) {
-	    usage(stderr);
-	    exit(1);
-	}
-	&ptable[string] tt = &value_all(!value_score, !value_imprecise);
-	write_tt(&tt);
-	exit(0);
-    }
-    if (generate || value_score || value_imprecise) {
-	usage(stderr);
-	exit(1);
-    }
-    play(!manual_roll);
-};
 
 # Permission is hereby granted, free of charge, to any person
 # obtaining a copy of this software and associated
