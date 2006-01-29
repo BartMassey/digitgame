@@ -1,7 +1,8 @@
 {-
 #
 # digitgame
-# Copyright 2005 Bart Massey <bart@cs.pdx.edu> 
+# Copyright 2005 Bart Massey <bart@cs.pdx.edu> and
+# Jamey Sharp <jamey@cs.pdx.edu>
 # ALL RIGHTS RESERVED
 # See the end of this file for licensing information
 #
@@ -10,12 +11,14 @@
 #
 -}
 
-import Array
-import List
-import Ratio
-import Char
-import Maybe
-import Data.HashTable
+module Main where
+
+import qualified Array
+import qualified List
+import qualified Char
+import qualified Data.Map as Map
+
+digits = ['1'..'9']
 
 rules :: [ String ]
 rules = ["Rules:",
@@ -37,231 +40,129 @@ rules = ["Rules:",
          ]
 
 print_rules :: IO ()
-print_rules = putStr $ foldl (++) "" $ map (++ "\n") rules
+--- mapM_ is the monadic map that discards the resulting list.
+print_rules = mapM_ putStrLn rules
 
-digits :: String
-digits = "123456789"
+--- A DupList is a run-length-encoded list.
+--- Invariant: for any DupList, the count (LHS)
+--- of the run is always > 0.
+newtype DupList a = DupList [ (Int, a) ]
+    deriving (Show)
 
-rollsize :: Int
-rollsize = 2 ^ length(digits);
+--- Alter the values in a DupList without changing the multiplicities.
+--- The functor allows fmap to be defined.
+instance Functor DupList where
+    fmap f (DupList l) = DupList $ map (\(c, v)-> (c, f v)) l
 
-rollnums :: [ Int ]
-rollnums = [0..(rollsize - 1)]
 
-rtable :: [ a ] -> Array Int a
-rtable elems = array (0, rollsize - 1) (zip rollnums elems)
-
-add_scores :: String -> String -> [ String ]
-add_scores s "" = [ s ]
-add_scores s t =
-    (add_scores (s ++ [ head t ]) (tail t)) ++
-    (add_scores s (tail t))
-
-atoi :: String -> Integer
-atoi "" = 0
-atoi s = read s
-
-itoa :: Integer -> String
-itoa 0 = ""
-itoa i = show i
-
-all_scores :: Array Int String
-all_scores =
-    rtable $ map itoa $ reverse $ sort $ map atoi $ add_scores "" digits
-
-dprob :: Array Int Rational
-dprob = array (2, 12) $
-              [(i,  ((toInteger(i) - 1) % 36)) | i <- [2.. 7]] ++
-              [(i, ((13 - toInteger(i)) % 36)) | i <- [8..12]]
-
-type Vtype = Rational
-
-type Ptable = [ Vtype ]
-
-score :: String -> Ptable
-score state =
-    map (score_prob (atoi state)) rollnums
+duplist_zipWith :: (Eq a, Eq b, Eq c) => (a -> b -> c) -> DupList a -> DupList b -> DupList c
+duplist_zipWith _ (DupList []) _ = DupList []
+duplist_zipWith _ _ (DupList []) = DupList []
+--- The trick here is to break up the longer run into pieces to fit
+--- the shorter run.                   
+duplist_zipWith f (DupList ((c1, v1):a)) (DupList ((c2, v2):b)) =
+        dupconsv (c, v1 `f` v2) $ duplist_zipWith f
+            (dupcons0 (c1 - c, v1) (DupList a))
+            (dupcons0 (c2 - c, v2) (DupList b))
     where
-        score_prob v i = 
-            let tv = atoi (all_scores ! i) in
-                if v < tv
-                then 1
-                else if v == tv
-                then 1%2
-                else 0
+        c = min c1 c2
+        --- Add an element onto the front of a DupList,
+        --- combining multiplicities appropriately.
+        dupcons0 :: Eq a => (Int, a) -> DupList a -> DupList a
+        dupcons0 (0,_) l = l
+        dupcons0 v (DupList l) = DupList $ v:l
+        dupconsv v (DupList l@[]) = DupList $ v:l
+        dupconsv v@(c1,v1) (DupList l@((c2, v2):rem))
+            | v1 == v2 = DupList $ (c1 + c2, v2):rem
+            | otherwise = DupList $ v:l
 
---- Return a list of all possible die rolls that
---- achieve the given value in the given state.
-rolls :: String -> Int -> [ String ]
-rolls state rv =
-    sortBy simpler (rolls' state [] rv)
-    where
-        rolls' _ ds 0 = [ reverse ds ]
-        rolls' [] _ _ = []
-        rolls' (s:ss) ds rv =
-            let d = digitToInt s in
-                if d > rv then [] else
-                   rolls' ss (s:ds) (rv - d) ++
-                   rolls' ss (  ds) (rv    )
-        simpler a b =
-            if (length a) < (length b) then LT else
-            if (length a) > (length b) then GT else
-            if a < b then LT else
-            if a > b then GT else
-            EQ
-                
+--- return all subsequences of
+--- a given length, in lex order.
+subseqsLen :: [a] -> Int -> [[a]]
+subseqsLen _ 0 = [[]]
+subseqsLen es l | length es < l = []
+subseqsLen (e:es) l =
+    (map (e:) (subseqsLen es (l - 1))) ++
+    (subseqsLen es l)
+        
+--- return all subsequences, in
+--- length-lex order.
+subseqs :: [a] -> [[a]]
+subseqs l =
+    concatMap (subseqsLen l) [0..(length l)]
+
+type State = String
+
+--- type Vtype = Rational
+type Vtype = Double
+
+type Ptable = DupList Vtype
+
 --- Fold up a list of ptables into a single ptable
 --- by using the given combining operator entry-by-entry.
 --- Give an error if there are no tables to combine;
 --- the way this is used that should never happen.
 ptable_fold :: (Vtype -> Vtype -> Vtype) -> [ Ptable ] -> Ptable
-ptable_fold  _ (     [t]) = t
-ptable_fold op (t1:t2:ts) = zipWith op t1 $ ptable_fold op (t2:ts)
+ptable_fold = foldl1 . duplist_zipWith
+
+--- Generalized histogram.  Given an "increment" operator that
+--- takes the old value of the bin and a new thing to be placed
+--- in the bin and returns new contents for that bin;
+--- an identity to initialize each bin; an interval denoting the
+--- range of bin indices; and a list of things to put in designated
+--- bins. Produces a list of final bin contents in index order.
+accum :: Array.Ix i => (a -> e -> e) -> e -> (i, i) -> [(i, a)] -> [e]
+--- XXX accumArray takes its function argument's arguments
+--- "backwards" from all sensibility.
+accum f z r = Array.elems . Array.accumArray (flip f) z r
+
+--- Returns a histogram of the probabilities for each
+--- of the 11 possible unique die roll values.
+dprob :: [ Vtype ]
+dprob = fmap (/ toEnum (length twodie)) $
+        accum (+) 0 (minimum twodie, maximum twodie) $
+        map (\v->(v,1)) twodie
+    where twodie = [a + b | a<-[1..6], b<-[1..6]]
+
+--- Return a list of all possible die rolls that
+--- achieve totals of 2,3..,12.
+rolls :: State -> [ [ State ] ]
+--- Strategy:  Given a state, first build all subsets
+--- of that state.  For each such subset, replace it with
+--- a pair consisting of the sum of its digits (the bin index)
+--- and the subset itself.  Filter out those pairs whose index
+--- is not in the range 2..12 since these are unrealizable by
+--- die rolls.  Finally, build a histogram of lists of states indexed
+--- by die roll value.  Each bin in the histogram is thus the
+--- set of rolls that achieve the given total.  
+rolls = accum (:) [] range .
+        filter (Array.inRange range . fst) .
+        map (\set-> (sum $ map Char.digitToInt set, set)) .
+        subseqs
+    where range = (2, 12)
 
 --- The value of a state at a given scoring threshold on a
 --- given roll is the maximum value of its child states at
 --- that threshold and roll, weighted appropriately.  For
 --- rolls for which there is no child, the value of the
 --- state at that roll is just its score.
-value :: HashTable String Ptable -> String -> IO ()
-value ht state =
-    do v0 <- Data.HashTable.lookup ht state
-       case v0 of
-         (Just _)  -> return ()
-         (Nothing) ->
-             do let rs = map (rolls state) [2..12]
-                vs <- mapM (mapM ((value ht) . (state \\))) rs
-                maxvs <- map (ptable_fold max) vs
-                wmvs <- zipWith ((*) . (dprob !)) maxvs [2..12]
-                answer <- ptable_fold (+) wmvs
-                Data.HashTable.insert ht state answer
+value :: State -> Ptable
+value state = (\(Just p)-> p) $ Map.lookup state values
+   where
+        values :: Map.Map State Ptable
+        values = Map.fromList $
+            map (\(score, state)-> (state, value' score state)) $
+            zip [0..] $ subseqs digits
 
-{-
+        value' :: Int -> State -> Ptable
+        value' index state = ptable_fold (+) $
+            zipWith (fmap . (*)) dprob $ map valuehelper $ rolls state
+            where
+                sc = DupList $ filter ((/= 0) . fst)
+                    [(511 - index, 1), (1, 1/2), (index, 0)]
 
-string get_input(string prompt) {
-    while (true) {
-	printf("%s ", prompt);
-	File::flush(stdout);
-	string s = chomp(gets());
-	if (s == "q")
-	    exit(0);
-	if (s == "h" || s == "?") {
-	    print_rules();
-	    continue;
-	}
-	return s;
-    }
-}
+                valuehelper :: [ State ] -> Ptable
+                valuehelper rs = ptable_fold max $
+                    sc : [ value $ state List.\\ r | r <- rs ]
 
-
-void play(bool autoroll) {
-    &ptable[string] tt = &value_all(true, true);
-    dev_srandom(64);
-    string cur = digits;
-    int threshold;
-    do {
-	string s = get_input("t>");
-        threshold = atoi(s);
-    } while(threshold <= 0 || threshold > rollsize - 1);
-    printf("threshold = %s\n", all_scores[threshold]);
-    while(true) {
-	int rv;
-	if (autoroll) {
-	    rv = randint(6) + randint(6) + 2;
-	} else {
-	    do {
-		string s = get_input("r>");
-		rv = atoi(s);
-	    } while(rv < 2 || rv > 12);
-	}
-	printf("%s ... %d\n", cur, rv);
-	&string[*] rolls = &rtab[cur][rv];
-	if (dim(rolls) == 0) {
-	    int c = atoi(cur);
-	    int t = atoi(all_scores[threshold]);
-	    if (c < t)
-		printf("You win!\n");
-	    else if (t < c)
-		printf("You lose.\n");
-	    else
-		printf("Tie game.\n");
-	    printf("Thanks for playing!\n");
-	    exit(0);
-	}
-	shuffle(&rolls);
-	for (int i = 0; i < dim(rolls); i++)
-	    printf("%c) %s -> %s\n",
-		   i + 'a', sminus(cur, rolls[i]), rolls[i]);
-	int c = 0;
-	if (dim(rolls) > 1) {
-	    while(true) {
-		string s = get_input("c>");
-
-		int parse_choice(string s) {
-		    string t = "";
-		    for (int i = 0; i < length(s); i++)
-			if (s[i] != ' ')
-			    t += String::new(s[i]);
-		    if (length(t) == 1 && isalpha(t[0]))
-			return tolower(t[0]) - 'a';
-		    for (int i = 0; i < dim(rolls); i++)
-			if (t == sminus(cur, rolls[i]))
-			    return i;
-		    return -1;
-		}
-
-		c = parse_choice(s);
-		if (c != -1)
-		    break;
-		printf("%s?\n", s);
-	    }
-	} else {
-	    printf("c> a\n");
-	}
-	string choice = rolls[c];
-	Sort::qsort(&rolls,
-		    bool func(string x, string y) {
-	                return tt[x][threshold] < tt[y][threshold]; });
-	for (int i = 0; i < dim(rolls); i++)
-	    printf("%c%s -> %s = %.4f\n", choice==rolls[i] ? '*' : ' ',
-		   sminus(cur, rolls[i]),
-		   rolls[i],
-		   tt[rolls[i]][threshold]);
-	printf("\n");
-	cur = choice;
-	if (cur == "") {
-	    printf("Perfect game!\n");
-	    printf("thanks for playing!\n");
-	    exit(0);
-	}
-    }
-}
-
-# Permission is hereby granted, free of charge, to any person
-# obtaining a copy of this software and associated
-# documentation files (the "Software"), to deal in the
-# Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute,
-# sublicense, and/or sell copies of the Software, and to
-# permit persons to whom the Software is furnished to do so,
-# subject to the following conditions:
-# 
-# The above copyright notice and this permission notice shall
-# be included in all copies or substantial portions of the
-# Software.
-# 
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
-# KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
-# WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
-# PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS
-# BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-# IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
-# OTHER DEALINGS IN THE SOFTWARE.
-# 
-# Except as contained in this notice, the names of the authors
-# or their institutions shall not be used in advertising or
-# otherwise to promote the sale, use or other dealings in this
-# Software without prior written authorization from the
-# authors.
--}
+main = print $ value digits
