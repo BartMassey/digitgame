@@ -39,9 +39,9 @@ rules = ["Rules:",
 ---	 ".. win=1.0) for optimal two-player play."
          ]
 
-print_rules :: IO ()
+printRules :: IO ()
 --- mapM_ is the monadic map that discards the resulting list.
-print_rules = mapM_ putStrLn rules
+printRules = mapM_ putStrLn rules
 
 --- A DupList is a run-length-encoded list.
 --- Invariant: for any DupList, the count (LHS)
@@ -55,13 +55,13 @@ instance Functor DupList where
     fmap f (DupList l) = DupList $ map (\(c, v)-> (c, f v)) l
 
 
-duplist_zipWith :: (Eq a, Eq b, Eq c) => (a -> b -> c) -> DupList a -> DupList b -> DupList c
-duplist_zipWith _ (DupList []) _ = DupList []
-duplist_zipWith _ _ (DupList []) = DupList []
+dupListZipWith :: (Eq a, Eq b, Eq c) => (a -> b -> c) -> DupList a -> DupList b -> DupList c
+dupListZipWith _ (DupList []) _ = DupList []
+dupListZipWith _ _ (DupList []) = DupList []
 --- The trick here is to break up the longer run into pieces to fit
 --- the shorter run.                   
-duplist_zipWith f (DupList ((c1, v1):a)) (DupList ((c2, v2):b)) =
-        dupconsv (c, v1 `f` v2) $ duplist_zipWith f
+dupListZipWith f (DupList ((c1, v1):a)) (DupList ((c2, v2):b)) =
+        dupconsv (c, v1 `f` v2) $ dupListZipWith f
             (dupcons0 (c1 - c, v1) (DupList a))
             (dupcons0 (c2 - c, v2) (DupList b))
     where
@@ -102,8 +102,8 @@ type Ptable = DupList Vtype
 --- by using the given combining operator entry-by-entry.
 --- Give an error if there are no tables to combine;
 --- the way this is used that should never happen.
-ptable_fold :: (Vtype -> Vtype -> Vtype) -> [ Ptable ] -> Ptable
-ptable_fold = foldl1 . duplist_zipWith
+ptableFold :: (Vtype -> Vtype -> Vtype) -> [ Ptable ] -> Ptable
+ptableFold = foldl1 . dupListZipWith
 
 --- Generalized histogram.  Given an "increment" operator that
 --- takes the old value of the bin and a new thing to be placed
@@ -155,14 +155,22 @@ value state = (\(Just p)-> p) $ Map.lookup state values
             zip [0..] $ subseqs digits
 
         value' :: Int -> State -> Ptable
-        value' index state = ptable_fold (+) $
+        value' index state = ptableFold (+) $
             zipWith (fmap . (*)) dprob $ map valuehelper $ rolls state
             where
                 sc = DupList $ filter ((/= 0) . fst)
                     [(511 - index, 1), (1, 1/2), (index, 0)]
 
                 valuehelper :: [ State ] -> Ptable
-                valuehelper rs = ptable_fold max $
+                valuehelper rs = ptableFold max $
                     sc : [ value $ state List.\\ r | r <- rs ]
 
-main = print $ value digits
+--- main = print $ value digits
+
+--- Prompt and return string
+getInput :: String -> IO String
+getInput prompt =
+    do putStr prompt;
+       putStr " ";
+       r <- getLine;
+       return r
