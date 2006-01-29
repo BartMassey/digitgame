@@ -15,6 +15,7 @@ import List
 import Ratio
 import Char
 import Maybe
+import Data.HashTable
 
 rules :: [ String ]
 rules = ["Rules:",
@@ -122,16 +123,18 @@ ptable_fold op (t1:t2:ts) = zipWith op t1 $ ptable_fold op (t2:ts)
 --- that threshold and roll, weighted appropriately.  For
 --- rolls for which there is no child, the value of the
 --- state at that roll is just its score.
-value :: String -> Ptable
-value state =
-    let sc = (score state) in
-        ptable_fold (+)
-                       [ map (* (dprob ! rv))
-                             (max_value sc (rolls state rv)) |
-                         rv <- [2..12] ]
-    where
-       max_value sc rs = ptable_fold max $
-                         sc : [ value (state \\ r) | r <- rs ]
+value :: HashTable String Ptable -> String -> IO ()
+value ht state =
+    do v0 <- Data.HashTable.lookup ht state
+       case v0 of
+         (Just _)  -> return ()
+         (Nothing) ->
+             do let rs = map (rolls state) [2..12]
+                vs <- mapM (mapM ((value ht) . (state \\))) rs
+                maxvs <- map (ptable_fold max) vs
+                wmvs <- zipWith ((*) . (dprob !)) maxvs [2..12]
+                answer <- ptable_fold (+) wmvs
+                Data.HashTable.insert ht state answer
 
 {-
 
