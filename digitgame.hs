@@ -13,10 +13,12 @@
 
 module Main where
 
-import qualified Array
 import qualified List
 import qualified Char
 import qualified Data.Map as Map
+import Random
+import Array
+import IO
 
 digits = ['1'..'9']
 
@@ -111,16 +113,16 @@ ptableFold = foldl1 . dupListZipWith
 --- an identity to initialize each bin; an interval denoting the
 --- range of bin indices; and a list of things to put in designated
 --- bins. Produces a list of final bin contents in index order.
-accum :: Array.Ix i => (a -> e -> e) -> e -> (i, i) -> [(i, a)] -> [e]
+ghist :: Ix i => (a -> e -> e) -> e -> (i, i) -> [(i, a)] -> [e]
 --- XXX accumArray takes its function argument's arguments
 --- "backwards" from all sensibility.
-accum f z r = Array.elems . Array.accumArray (flip f) z r
+ghist f z r = elems . accumArray (flip f) z r
 
 --- Returns a histogram of the probabilities for each
 --- of the 11 possible unique die roll values.
 dprob :: [ Vtype ]
 dprob = fmap (/ toEnum (length twodie)) $
-        accum (+) 0 (minimum twodie, maximum twodie) $
+        ghist (+) 0 (minimum twodie, maximum twodie) $
         map (\v->(v,1)) twodie
     where twodie = [a + b | a<-[1..6], b<-[1..6]]
 
@@ -135,8 +137,8 @@ rolls :: State -> [ [ State ] ]
 --- die rolls.  Finally, build a histogram of lists of states indexed
 --- by die roll value.  Each bin in the histogram is thus the
 --- set of rolls that achieve the given total.  
-rolls = accum (:) [] range .
-        filter (Array.inRange range . fst) .
+rolls = ghist (:) [] range .
+        filter (inRange range . fst) .
         map (\set-> (sum $ map Char.digitToInt set, set)) .
         subseqs
     where range = (2, 12)
@@ -165,12 +167,200 @@ value state = (\(Just p)-> p) $ Map.lookup state values
                 valuehelper rs = ptableFold max $
                     sc : [ value $ state List.\\ r | r <- rs ]
 
+--- for testing
 --- main = print $ value digits
 
---- Prompt and return string
+--- remove whitespace from beginning and end of string
+trimWhite :: String -> String
+trimWhite =
+    reverse . trimWhiteHead . reverse . trimWhiteHead
+    where
+        --- remove whitespace from beginning of string
+        trimWhiteHead :: String -> String
+        trimWhiteHead (' ':ss) = trimWhite ss
+        trimWhiteHead ('\t':ss) = trimWhite ss
+        trimWhiteHead ss = ss
+
+--- Prompt and return trimmed string
 getInput :: String -> IO String
 getInput prompt =
-    do putStr prompt;
-       putStr " ";
-       r <- getLine;
-       return r
+    do  hSetBuffering stdin LineBuffering
+        putStr prompt
+        putStr " "
+        r <- getLine
+        return (trimWhite r)
+
+--- Prompt and return Int in range
+getIntInput :: String -> (Int, Int) -> IO Int
+getIntInput prompt range@(low, high) =
+    do  s <- getInput prompt
+        if s == "q"
+            then error "user quit"
+            else
+                do
+                    t <- ((readIO s) :: IO Int) `catch`
+                         (\e ->
+                              if isUserError e
+                                  then getIntInput prompt range
+                                  else ioError e)
+                    if (t >= low) && (t <= high)
+                        then return t
+                        else getIntInput prompt range
+
+scoreList :: [ String ]
+scoreList = subseqs digits
+
+rollSize :: Int
+rollSize = length scoreList
+
+allScores :: Array Int String
+allScores =
+    array (1, rollSize) (zip [1..rollSize] scoreList)
+
+while :: (a -> IO (Maybe a)) -> a -> IO ()
+while f x =
+    do  y <- f x
+        case y of
+            Just z -> while f z
+            Nothing -> return ()
+
+--- from the Haskell 98 report
+rollDie :: IO Int
+rollDie = getStdRandom (randomR (1,6))
+
+rollDice :: IO Int
+rollDice =
+    do  r1 <- rollDie
+        r2 <- rollDie
+        return (r1 + r2)
+
+--- Play the game
+--- Autoroll argument false indicates
+--- user will enter die rolls manually.
+play :: Bool -> IO ()
+play autoroll =
+    do  threshold <- getIntInput "t>" (1, rollSize)
+        putStrLn ("threshold = " ++ (allScores ! threshold))
+        while playRound digits
+    where
+        playRound :: String -> IO (Maybe String)
+        playRound cur =
+            do  roll <- if autoroll
+                            then rollDice
+                            else (getIntInput "r>" (2,12))
+                return Nothing
+            
+            
+{-
+
+void play(bool autoroll) {
+    &ptable[string] tt = &value_all(true, true);
+    dev_srandom(64);
+    string cur = digits;
+    int threshold;
+    do {
+	string s = get_input("t>");
+        threshold = atoi(s);
+    } while(threshold <= 0 || threshold > rollsize - 1);
+    printf("threshold = %s\n", all_scores[threshold]);
+    while(true) {
+	int rv;
+	if (autoroll) {
+	    rv = randint(6) + randint(6) + 2;
+	} else {
+	    do {
+		string s = get_input("r>");
+		rv = atoi(s);
+	    } while(rv < 2 || rv > 12);
+	}
+	printf("%s ... %d\n", cur, rv);
+	&string[*] rolls = &rtab[cur][rv];
+	if (dim(rolls) == 0) {
+	    int c = atoi(cur);
+	    int t = atoi(all_scores[threshold]);
+	    if (c < t)
+		printf("You win!\n");
+	    else if (t < c)
+		printf("You lose.\n");
+	    else
+		printf("Tie game.\n");
+	    printf("Thanks for playing!\n");
+	    exit(0);
+	}
+	shuffle(&rolls);
+	for (int i = 0; i < dim(rolls); i++)
+	    printf("%c) %s -> %s\n",
+		   i + 'a', sminus(cur, rolls[i]), rolls[i]);
+	int c = 0;
+	if (dim(rolls) > 1) {
+	    while(true) {
+		string s = get_input("c>");
+
+		int parse_choice(string s) {
+		    string t = "";
+		    for (int i = 0; i < length(s); i++)
+			if (s[i] != ' ')
+			    t += String::new(s[i]);
+		    if (length(t) == 1 && isalpha(t[0]))
+			return tolower(t[0]) - 'a';
+		    for (int i = 0; i < dim(rolls); i++)
+			if (t == sminus(cur, rolls[i]))
+			    return i;
+		    return -1;
+		}
+
+		c = parse_choice(s);
+		if (c != -1)
+		    break;
+		printf("%s?\n", s);
+	    }
+	} else {
+	    printf("c> a\n");
+	}
+	string choice = rolls[c];
+	Sort::qsort(&rolls,
+		    bool func(string x, string y) {
+	                return tt[x][threshold] < tt[y][threshold]; });
+	for (int i = 0; i < dim(rolls); i++)
+	    printf("%c%s -> %s = %.4f\n", choice==rolls[i] ? '*' : ' ',
+		   sminus(cur, rolls[i]),
+		   rolls[i],
+		   tt[rolls[i]][threshold]);
+	printf("\n");
+	cur = choice;
+	if (cur == "") {
+	    printf("Perfect game!\n");
+	    printf("thanks for playing!\n");
+	    exit(0);
+	}
+    }
+}
+
+# Permission is hereby granted, free of charge, to any person
+# obtaining a copy of this software and associated
+# documentation files (the "Software"), to deal in the
+# Software without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute,
+# sublicense, and/or sell copies of the Software, and to
+# permit persons to whom the Software is furnished to do so,
+# subject to the following conditions:
+# 
+# The above copyright notice and this permission notice shall
+# be included in all copies or substantial portions of the
+# Software.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+# KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+# WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+# PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS
+# BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+# IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+# OTHER DEALINGS IN THE SOFTWARE.
+# 
+# Except as contained in this notice, the names of the authors
+# or their institutions shall not be used in advertising or
+# otherwise to promote the sale, use or other dealings in this
+# Software without prior written authorization from the
+# authors.
+-}
