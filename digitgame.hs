@@ -107,28 +107,17 @@ type Ptable = DupList Vtype
 ptableFold :: (Vtype -> Vtype -> Vtype) -> [ Ptable ] -> Ptable
 ptableFold = foldl1 . dupListZipWith
 
---- Generalized histogram.  Given an "increment" operator that
---- takes the old value of the bin and a new thing to be placed
---- in the bin and returns new contents for that bin;
---- an identity to initialize each bin; an interval denoting the
---- range of bin indices; and a list of things to put in designated
---- bins. Produces a list of final bin contents in index order.
-ghist :: Ix i => (a -> e -> e) -> e -> (i, i) -> [(i, a)] -> [e]
---- XXX accumArray takes its function argument's arguments
---- "backwards" from all sensibility.
-ghist f z r = elems . accumArray (flip f) z r
-
 --- Returns a histogram of the probabilities for each
 --- of the 11 possible unique die roll values.
 dprob :: [ Vtype ]
 dprob = fmap (/ toEnum (length twodie)) $
-        ghist (+) 0 (minimum twodie, maximum twodie) $
+        (elems . (accumArray (flip (+)) 0 (minimum twodie, maximum twodie))) $
         map (\v->(v,1)) twodie
     where twodie = [a + b | a<-[1..6], b<-[1..6]]
 
 --- Return a list of all possible die rolls that
 --- achieve totals of 2,3..,12.
-rolls :: State -> [ [ State ] ]
+rolls :: State -> Array Int [ State ]
 --- Strategy:  Given a state, first build all subsets
 --- of that state.  For each such subset, replace it with
 --- a pair consisting of the sum of its digits (the bin index)
@@ -137,7 +126,7 @@ rolls :: State -> [ [ State ] ]
 --- die rolls.  Finally, build a histogram of lists of states indexed
 --- by die roll value.  Each bin in the histogram is thus the
 --- set of rolls that achieve the given total.  
-rolls = ghist (:) [] range .
+rolls = accumArray (flip (:)) [] range .
         filter (inRange range . fst) .
         map (\set-> (sum $ map Char.digitToInt set, set)) .
         subseqs
@@ -158,7 +147,9 @@ value state = (\(Just p)-> p) $ Map.lookup state values
 
         value' :: Int -> State -> Ptable
         value' index state = ptableFold (+) $
-            zipWith (fmap . (*)) dprob $ map valuehelper $ rolls state
+            zipWith (fmap . (*)) dprob $
+            map valuehelper $
+            elems (rolls state)
             where
                 sc = DupList $ filter ((/= 0) . fst)
                     [(511 - index, 1), (1, 1/2), (index, 0)]
@@ -252,7 +243,7 @@ play autoroll =
                                 then rollDice
                                 else (getIntInput "r>" (2,12))
                     putStrLn (cur ++ " ... " ++ (show roll))
-                    let  moves = (rolls ! roll) in
+                    let  moves = ((rolls cur) ! roll) in
                          if (length moves) == 0
                              then do  endGame ((atoi cur) -
                                                (atoi (allScores ! threshold)))
