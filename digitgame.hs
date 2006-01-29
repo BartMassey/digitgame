@@ -234,6 +234,9 @@ rollDice =
         r2 <- rollDie
         return (r1 + r2)
 
+atoi :: String -> Int
+atoi = read
+
 --- Play the game
 --- Autoroll argument false indicates
 --- user will enter die rolls manually.
@@ -241,39 +244,32 @@ play :: Bool -> IO ()
 play autoroll =
     do  threshold <- getIntInput "t>" (1, rollSize)
         putStrLn ("threshold = " ++ (allScores ! threshold))
-        while playRound digits
-    where
-        playRound :: String -> IO (Maybe String)
-        playRound cur =
-            do  roll <- if autoroll
-                            then rollDice
-                            else (getIntInput "r>" (2,12))
-                return Nothing
-            
+        while playRound (digits, threshold)
+        where
+            playRound :: (String, Int) -> IO (Maybe (String, Int))
+            playRound (cur, threshold) =
+                do  roll <- if autoroll
+                                then rollDice
+                                else (getIntInput "r>" (2,12))
+                    putStrLn (cur ++ " ... " ++ (show roll))
+                    let  moves = (rolls ! roll) in
+                         if (length moves) == 0
+                             then do  endGame ((atoi cur) -
+                                               (atoi (allScores ! threshold)))
+                                      return Nothing
+                             else return Nothing
+            --- Handle end of game.
+            endGame :: Int -> IO ()
+            endGame sign =
+                do  if sign < 0
+                        then putStrLn "You win!"
+                        else if sign > 0
+                        then putStrLn "You win."
+                        else putStrLn "A tie."
+                    putStrLn "Thanks for playing!"
             
 {-
 
-void play(bool autoroll) {
-    &ptable[string] tt = &value_all(true, true);
-    dev_srandom(64);
-    string cur = digits;
-    int threshold;
-    do {
-	string s = get_input("t>");
-        threshold = atoi(s);
-    } while(threshold <= 0 || threshold > rollsize - 1);
-    printf("threshold = %s\n", all_scores[threshold]);
-    while(true) {
-	int rv;
-	if (autoroll) {
-	    rv = randint(6) + randint(6) + 2;
-	} else {
-	    do {
-		string s = get_input("r>");
-		rv = atoi(s);
-	    } while(rv < 2 || rv > 12);
-	}
-	printf("%s ... %d\n", cur, rv);
 	&string[*] rolls = &rtab[cur][rv];
 	if (dim(rolls) == 0) {
 	    int c = atoi(cur);
