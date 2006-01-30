@@ -13,8 +13,8 @@
 
 module Main where
 
-import qualified List
-import qualified Char
+import List
+import Char
 import qualified Data.Map as Map
 import Random
 import Array
@@ -128,7 +128,7 @@ rolls :: State -> Array Int [ State ]
 --- set of rolls that achieve the given total.  
 rolls = accumArray (flip (:)) [] range .
         filter (inRange range . fst) .
-        map (\set-> (sum $ map Char.digitToInt set, set)) .
+        map (\set-> (sum $ map digitToInt set, set)) .
         subseqs
     where range = (2, 12)
 
@@ -156,7 +156,7 @@ value state = (\(Just p)-> p) $ Map.lookup state values
 
                 valuehelper :: [ State ] -> Ptable
                 valuehelper rs = ptableFold max $
-                    sc : [ value $ state List.\\ r | r <- rs ]
+                    sc : [ value $ state \\ r | r <- rs ]
 
 --- for testing
 --- main = print $ value digits
@@ -198,6 +198,23 @@ getIntInput prompt range@(low, high) =
                         then return t
                         else getIntInput prompt range
 
+--- Prompt and return Letter in range
+getLetterInput :: String -> Int -> IO Char
+getLetterInput prompt high =
+    do  s <- getInput prompt
+        if s == "q"
+            then error "user quit"
+            else
+                do
+                    t <- ((readIO s) :: IO Char) `catch`
+                         (\e ->
+                              if isUserError e
+                                  then getLetterInput prompt high
+                                  else ioError e)
+                    if (t >= 'a') && (t <= chr((ord 'a') + (high - 1)))
+                        then return t
+                        else getLetterInput prompt high
+
 scoreList :: [ String ]
 scoreList = subseqs digits
 
@@ -228,6 +245,20 @@ rollDice =
 atoi :: String -> Int
 atoi = read
 
+--- (current position, score threshold)
+type GState = (String, Int)
+
+--- Shuffle a list
+--- Knuth et al algorithm
+shuffle :: [ b ] -> IO [ b ]
+shuffle [] = return []
+shuffle [x] = return [x]
+shuffle s =
+    do  r <- getStdRandom (randomR (0, (length s) - 1))
+        let (lt, rt) = splitAt r s in
+            do  more <- shuffle (lt ++ (tail rt))
+                return ((head rt) : more)
+
 --- Play the game
 --- Autoroll argument false indicates
 --- user will enter die rolls manually.
@@ -237,20 +268,8 @@ play autoroll =
         putStrLn ("threshold = " ++ (allScores ! threshold))
         while playRound (digits, threshold)
         where
-            playRound :: (String, Int) -> IO (Maybe (String, Int))
-            playRound (cur, threshold) =
-                do  roll <- if autoroll
-                                then rollDice
-                                else (getIntInput "r>" (2,12))
-                    putStrLn (cur ++ " ... " ++ (show roll))
-                    let  moves = ((rolls cur) ! roll) in
-                         if (length moves) == 0
-                             then do  endGame ((atoi cur) -
-                                               (atoi (allScores ! threshold)))
-                                      return Nothing
-                             else return Nothing
             --- Handle end of game.
-            endGame :: Int -> IO ()
+            endGame :: Int -> IO (Maybe GState)
             endGame sign =
                 do  if sign < 0
                         then putStrLn "You win!"
@@ -258,52 +277,50 @@ play autoroll =
                         then putStrLn "You win."
                         else putStrLn "A tie."
                     putStrLn "Thanks for playing!"
-            
+                    return Nothing
+            --- Handle continuing game.
+            playRound :: GState -> IO (Maybe GState)
+            playRound (cur, threshold) =
+                do  roll <- if autoroll
+                                then rollDice
+                                else (getIntInput "r>" (2,12))
+                    putStrLn (cur ++ " ... " ++ (show roll))
+                    let  moves = ((rolls cur) ! roll) in
+                         if (length moves) == 0
+                             then endGame ((atoi cur) -
+                                           (atoi (allScores ! threshold)))
+                             else nextMove moves
+                where
+                    -- Actually step through a move
+                    nextMove :: [ State ] -> IO (Maybe GState)
+                    nextMove moves =
+                        let l = length moves in
+                            do  smoves <- shuffle moves
+                                showMoves smoves
+                                if l == 1
+                                    then
+                                        do  putStrLn "c> a"
+                                            return (Just (head smoves,
+                                                          threshold))
+                                    else
+                                        do  r <- getLetterInput "c>" l
+                                            return (Just (smoves !!
+                                                          ((ord r) -
+                                                           (ord 'a')),
+                                                          threshold))
+                        where
+                            --- Print the move list
+                            showMoves :: [ State ] -> IO ()
+                            showMoves moves =
+                                mapM_ showMove (zip ['a'..] moves)
+                                where
+                                    showMove (letter, take) = 
+                                        putStrLn ((letter : ") ") ++
+                                                  take ++
+                                                  " -> " ++
+                                                  (cur \\ take))
+
 {-
-
-	&string[*] rolls = &rtab[cur][rv];
-	if (dim(rolls) == 0) {
-	    int c = atoi(cur);
-	    int t = atoi(all_scores[threshold]);
-	    if (c < t)
-		printf("You win!\n");
-	    else if (t < c)
-		printf("You lose.\n");
-	    else
-		printf("Tie game.\n");
-	    printf("Thanks for playing!\n");
-	    exit(0);
-	}
-	shuffle(&rolls);
-	for (int i = 0; i < dim(rolls); i++)
-	    printf("%c) %s -> %s\n",
-		   i + 'a', sminus(cur, rolls[i]), rolls[i]);
-	int c = 0;
-	if (dim(rolls) > 1) {
-	    while(true) {
-		string s = get_input("c>");
-
-		int parse_choice(string s) {
-		    string t = "";
-		    for (int i = 0; i < length(s); i++)
-			if (s[i] != ' ')
-			    t += String::new(s[i]);
-		    if (length(t) == 1 && isalpha(t[0]))
-			return tolower(t[0]) - 'a';
-		    for (int i = 0; i < dim(rolls); i++)
-			if (t == sminus(cur, rolls[i]))
-			    return i;
-		    return -1;
-		}
-
-		c = parse_choice(s);
-		if (c != -1)
-		    break;
-		printf("%s?\n", s);
-	    }
-	} else {
-	    printf("c> a\n");
-	}
 	string choice = rolls[c];
 	Sort::qsort(&rolls,
 		    bool func(string x, string y) {
@@ -322,32 +339,34 @@ play autoroll =
 	}
     }
 }
+-}
 
-# Permission is hereby granted, free of charge, to any person
-# obtaining a copy of this software and associated
-# documentation files (the "Software"), to deal in the
-# Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute,
-# sublicense, and/or sell copies of the Software, and to
-# permit persons to whom the Software is furnished to do so,
-# subject to the following conditions:
-# 
-# The above copyright notice and this permission notice shall
-# be included in all copies or substantial portions of the
-# Software.
-# 
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
-# KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
-# WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
-# PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS
-# BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-# IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
-# OTHER DEALINGS IN THE SOFTWARE.
-# 
-# Except as contained in this notice, the names of the authors
-# or their institutions shall not be used in advertising or
-# otherwise to promote the sale, use or other dealings in this
-# Software without prior written authorization from the
-# authors.
+{-
+  Permission is hereby granted, free of charge, to any person
+  obtaining a copy of this software and associated
+  documentation files (the "Software"), to deal in the
+  Software without restriction, including without limitation
+  the rights to use, copy, modify, merge, publish, distribute,
+  sublicense, and/or sell copies of the Software, and to
+  permit persons to whom the Software is furnished to do so,
+  subject to the following conditions:
+  
+  The above copyright notice and this permission notice shall
+  be included in all copies or substantial portions of the
+  Software.
+  
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+  KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+  WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+  PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS
+  BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+  IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+  OTHER DEALINGS IN THE SOFTWARE.
+  
+  Except as contained in this notice, the names of the authors
+  or their institutions shall not be used in advertising or
+  otherwise to promote the sale, use or other dealings in this
+  Software without prior written authorization from the
+  authors.
 -}
