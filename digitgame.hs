@@ -78,6 +78,12 @@ dupListZipWith f (DupList ((c1, v1):a)) (DupList ((c2, v2):b)) =
             | v1 == v2 = DupList $ (c1 + c2, v2):rem
             | otherwise = DupList $ v:l
 
+dupListExpand :: DupList a -> [ a ]
+dupListExpand (DupList []) = []
+dupListExpand (DupList ((count, elem) : dls)) =
+    (replicate count elem) ++ (dupListExpand (DupList dls))
+
+
 --- return all subsequences of
 --- a given length, in lex order.
 subseqsLen :: [a] -> Int -> [[a]]
@@ -300,14 +306,17 @@ play autoroll =
                                 if l == 1
                                     then
                                         do  putStrLn "c> a"
-                                            return (Just (head smoves,
-                                                          threshold))
+                                            return (Just
+                                                    ((cur \\ (head smoves)),
+                                                     threshold))
                                     else
                                         do  r <- getLetterInput "c>" l
-                                            return (Just (smoves !!
-                                                          ((ord r) -
-                                                           (ord 'a')),
-                                                          threshold))
+                                            let m = smoves !!
+                                                    ((ord r) - (ord 'a')) in
+                                                do
+                                                    valueMoves moves m
+                                                    return (Just (cur \\ m,
+                                                            threshold))
                         where
                             --- Print the move list
                             showMoves :: [ State ] -> IO ()
@@ -319,26 +328,33 @@ play autoroll =
                                                   take ++
                                                   " -> " ++
                                                   (cur \\ take))
+                            --- Print the move values
+                            valueMoves :: [ State ] -> State -> IO ()
+                            valueMoves moves choice =
+                                mapM_ valueMove moves
+                                where
+                                    valueMove take = 
+                                        putStrLn ((choiceChar take) ++
+                                                  take ++
+                                                  " -> " ++
+                                                  (cur \\ take) ++
+                                                  " = " ++
+                                                  (choiceVal take))
+                                    choiceChar take =
+                                        if take == choice
+                                            then "*"
+                                            else " "
+                                    choiceVal take =
+                                        show ((dupListExpand
+                                            (value (cur \\ take))) !!
+                                            threshold)
 
 {-
-	string choice = rolls[c];
-	Sort::qsort(&rolls,
-		    bool func(string x, string y) {
-	                return tt[x][threshold] < tt[y][threshold]; });
-	for (int i = 0; i < dim(rolls); i++)
-	    printf("%c%s -> %s = %.4f\n", choice==rolls[i] ? '*' : ' ',
-		   sminus(cur, rolls[i]),
-		   rolls[i],
-		   tt[rolls[i]][threshold]);
-	printf("\n");
-	cur = choice;
 	if (cur == "") {
 	    printf("Perfect game!\n");
 	    printf("thanks for playing!\n");
 	    exit(0);
 	}
-    }
-}
 -}
 
 {-
