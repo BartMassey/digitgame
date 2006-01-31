@@ -198,11 +198,13 @@ getIntInput prompt range@(low, high) =
                     t <- ((readIO s) :: IO Int) `catch`
                          (\e ->
                               if isUserError e
-                                  then getIntInput prompt range
+                                  then tryAgain
                                   else ioError e)
                     if (t >= low) && (t <= high)
                         then return t
-                        else getIntInput prompt range
+                        else tryAgain
+    where
+        tryAgain = putStrLn "?" >> getIntInput prompt range
 
 --- Prompt and return Letter in range
 getLetterInput :: String -> Int -> IO Char
@@ -211,15 +213,12 @@ getLetterInput prompt high =
         if s == "q"
             then error "user quit"
             else
-                do
-                    t <- ((readIO s) :: IO Char) `catch`
-                         (\e ->
-                              if isUserError e
-                                  then getLetterInput prompt high
-                                  else ioError e)
-                    if (t >= 'a') && (t <= chr((ord 'a') + (high - 1)))
-                        then return t
-                        else getLetterInput prompt high
+                if (length s == 1) && ((head s) >= 'a') &&
+                   ((head s) <= chr((ord 'a') + (high - 1)))
+                    then return (head s)
+                    else tryAgain
+    where
+        tryAgain = putStrLn "?" >> getLetterInput prompt high
 
 scoreList :: [ String ]
 scoreList = subseqs digits
@@ -280,7 +279,7 @@ play autoroll =
                 do  if sign < 0
                         then putStrLn "You win!"
                         else if sign > 0
-                        then putStrLn "You win."
+                        then putStrLn "You lose."
                         else putStrLn "A tie."
                     putStrLn "Thanks for playing!"
                     return Nothing
@@ -348,6 +347,8 @@ play autoroll =
                                         show ((dupListExpand
                                             (value (cur \\ take))) !!
                                             threshold)
+
+main = play True
 
 {-
 	if (cur == "") {
