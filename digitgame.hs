@@ -14,11 +14,13 @@
 module Main where
 
 import List
+import Monad
 import Char
 import qualified Data.Map as Map
 import Random
 import Array
 import IO
+import Numeric
 
 digits = ['1'..'9']
 
@@ -79,9 +81,8 @@ dupListZipWith f (DupList ((c1, v1):a)) (DupList ((c2, v2):b)) =
             | otherwise = DupList $ v:l
 
 dupListExpand :: DupList a -> [ a ]
-dupListExpand (DupList []) = []
-dupListExpand (DupList ((count, elem) : dls)) =
-    (replicate count elem) ++ (dupListExpand (DupList dls))
+dupListExpand (DupList dls) =
+    concatMap (uncurry replicate) dls
 
 
 --- return all subsequences of
@@ -101,8 +102,8 @@ subseqs l =
 
 type State = String
 
---- type Vtype = Rational
-type Vtype = Double
+type Vtype = Rational
+--- type Vtype = Double
 
 type Ptable = DupList Vtype
 
@@ -182,6 +183,7 @@ trimWhite =
 getInput :: String -> IO String
 getInput prompt =
     do  hSetBuffering stdin LineBuffering
+        hSetBuffering stdout NoBuffering
         putStr prompt
         putStr " "
         r <- getLine
@@ -207,15 +209,15 @@ getIntInput prompt range@(low, high) =
         tryAgain = putStrLn "?" >> getIntInput prompt range
 
 --- Prompt and return Letter in range
-getLetterInput :: String -> Int -> IO Char
+getLetterInput :: String -> Int -> IO Int
 getLetterInput prompt high =
     do  s <- getInput prompt
         if s == "q"
             then error "user quit"
             else
-                if (length s == 1) && ((head s) >= 'a') &&
-                   ((head s) <= chr((ord 'a') + (high - 1)))
-                    then return (head s)
+                let v = ord (head s) - ord 'a' in
+                if length s == 1 && v >= 0 && v < high
+                    then return v
                     else tryAgain
     where
         tryAgain = putStrLn "?" >> getLetterInput prompt high
@@ -230,12 +232,9 @@ allScores :: Array Int String
 allScores =
     array (1, rollSize) (zip [1..rollSize] scoreList)
 
-while :: (a -> IO (Maybe a)) -> a -> IO ()
-while f x =
-    do  y <- f x
-        case y of
-            Just z -> while f z
-            Nothing -> return ()
+--- iterate f on states to termination
+while :: Monad m => (a -> m a) -> a -> m ()
+while f x = f x >>= while f
 
 --- from the Haskell 98 report
 rollDie :: IO Int
@@ -248,10 +247,8 @@ rollDice =
         return (r1 + r2)
 
 atoi :: String -> Int
-atoi = read
-
---- (current position, score threshold)
-type GState = (String, Int)
+atoi "" = 0
+atoi s  = read s
 
 --- Shuffle a list
 --- Knuth et al algorithm
@@ -267,88 +264,86 @@ shuffle s =
 --- Play the game
 --- Autoroll argument false indicates
 --- user will enter die rolls manually.
-play :: Bool -> IO ()
-play autoroll =
+play :: IO Int -> Int -> IO ()
+play roller threshold = while playRound digits
+    where
+        --- Handle end of game.
+        endGame :: State -> IO State
+        endGame cur =
+            case compare (atoi cur) (atoi (allScores ! threshold)) of
+                LT -> fail "You win!"
+                GT -> fail "You lose."
+                EQ -> fail "A tie."
+        --- Handle continuing game.
+        playRound :: State -> IO State
+        playRound cur =
+            do  roll <- roller
+                putStrLn (cur ++ " ... " ++ (show roll))
+                let moves = reverse ((rolls cur) ! roll)
+                if (length moves) == 0
+                    then endGame cur
+                    else nextMove moves
+            where
+                -- Actually step through a move
+                nextMove :: [ State ] -> IO State
+                nextMove moves =
+                    do  let l = length moves
+                        smoves <- shuffle moves
+                        showMoves smoves
+                        m <- case l of
+                            1 ->
+                                do  putStrLn "c> a"
+                                    return (head smoves)
+                            _ ->
+                                do  r <- getLetterInput "c>" l
+                                    let m = smoves !! r
+                                    valueMoves moves m
+                                    return m
+                        return (cur \\ m)
+                    where
+                        --- Print the move list
+                        showMoves :: [ State ] -> IO ()
+                        showMoves moves =
+                            zipWithM_ showMove ['a'..] moves
+                            where
+                                showMove letter take = 
+                                    putStrLn ((letter : ") ") ++
+                                              take ++
+                                              " -> " ++
+                                              (cur \\ take))
+                        --- Print the move values
+                        valueMoves :: [ State ] -> State -> IO ()
+                        valueMoves moves choice =
+                            mapM_ valueMove moves
+                            where
+                                valueMove take = 
+                                    putStrLn ((choiceChar take) ++
+                                              take ++
+                                              " -> " ++
+                                              (cur \\ take) ++
+                                              " = " ++
+                                              (choiceVal take))
+                                choiceChar take =
+                                    if take == choice
+                                        then "*"
+                                        else " "
+                                choiceVal take =
+                                    showDecimalRat
+                                      ((dupListExpand
+                                        (value (cur \\ take))) !!
+                                        (512 - threshold))
+                                showDecimalRat r =
+                                     showFFloat (Just 4) (fromRat r) ""
+
+main =
     do  threshold <- getIntInput "t>" (1, rollSize)
         putStrLn ("threshold = " ++ (allScores ! threshold))
-        while playRound (digits, threshold)
-        where
-            --- Handle end of game.
-            endGame :: Int -> IO (Maybe GState)
-            endGame sign =
-                do  if sign < 0
-                        then putStrLn "You win!"
-                        else if sign > 0
-                        then putStrLn "You lose."
-                        else putStrLn "A tie."
-                    putStrLn "Thanks for playing!"
-                    return Nothing
-            --- Handle continuing game.
-            playRound :: GState -> IO (Maybe GState)
-            playRound (cur, threshold) =
-                do  roll <- if autoroll
-                                then rollDice
-                                else (getIntInput "r>" (2,12))
-                    putStrLn (cur ++ " ... " ++ (show roll))
-                    let  moves = ((rolls cur) ! roll) in
-                         if (length moves) == 0
-                             then endGame ((atoi cur) -
-                                           (atoi (allScores ! threshold)))
-                             else nextMove moves
-                where
-                    -- Actually step through a move
-                    nextMove :: [ State ] -> IO (Maybe GState)
-                    nextMove moves =
-                        let l = length moves in
-                            do  smoves <- shuffle moves
-                                showMoves smoves
-                                if l == 1
-                                    then
-                                        do  putStrLn "c> a"
-                                            return (Just
-                                                    ((cur \\ (head smoves)),
-                                                     threshold))
-                                    else
-                                        do  r <- getLetterInput "c>" l
-                                            let m = smoves !!
-                                                    ((ord r) - (ord 'a')) in
-                                                do
-                                                    valueMoves moves m
-                                                    return (Just (cur \\ m,
-                                                            threshold))
-                        where
-                            --- Print the move list
-                            showMoves :: [ State ] -> IO ()
-                            showMoves moves =
-                                mapM_ showMove (zip ['a'..] moves)
-                                where
-                                    showMove (letter, take) = 
-                                        putStrLn ((letter : ") ") ++
-                                                  take ++
-                                                  " -> " ++
-                                                  (cur \\ take))
-                            --- Print the move values
-                            valueMoves :: [ State ] -> State -> IO ()
-                            valueMoves moves choice =
-                                mapM_ valueMove moves
-                                where
-                                    valueMove take = 
-                                        putStrLn ((choiceChar take) ++
-                                                  take ++
-                                                  " -> " ++
-                                                  (cur \\ take) ++
-                                                  " = " ++
-                                                  (choiceVal take))
-                                    choiceChar take =
-                                        if take == choice
-                                            then "*"
-                                            else " "
-                                    choiceVal take =
-                                        show ((dupListExpand
-                                            (value (cur \\ take))) !!
-                                            threshold)
-
-main = play True
+        let autoroll = True
+        let roller = if autoroll
+                         then rollDice
+                         else getIntInput "r>" (2,12)
+        play roller threshold `catch` (putStrLn . ioeGetErrorString)
+        putStrLn "Thanks for playing!"
 
 {-
 	if (cur == "") {
