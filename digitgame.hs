@@ -267,13 +267,6 @@ shuffle s =
 play :: IO Int -> Int -> IO ()
 play roller threshold = while playRound digits
     where
-        --- Handle end of game.
-        endGame :: State -> IO State
-        endGame cur =
-            case compare (atoi cur) (atoi (allScores ! threshold)) of
-                LT -> fail "You win!"
-                GT -> fail "You lose."
-                EQ -> fail "A tie."
         --- Handle continuing game.
         playRound :: State -> IO State
         playRound cur =
@@ -281,10 +274,22 @@ play roller threshold = while playRound digits
                 putStrLn (cur ++ " ... " ++ (show roll))
                 let moves = reverse ((rolls cur) ! roll)
                 if (length moves) == 0
-                    then endGame cur
+                    then endGame
                     else nextMove moves
             where
-                -- Actually step through a move
+                --- Handle end of game.
+                endGame :: IO State
+                endGame =
+                    do
+                        if cur == ""
+                            then putStrLn "Perfect game!"
+                            else return ()
+                        case compare (atoi cur)
+                             (atoi (allScores ! threshold)) of
+                            LT -> fail "You win!"
+                            GT -> fail "You lose."
+                            EQ -> fail "A tie."
+                --- Actually step through a move
                 nextMove :: [ State ] -> IO State
                 nextMove moves =
                     do  let l = length moves
@@ -344,14 +349,6 @@ main =
                          else getIntInput "r>" (2,12)
         play roller threshold `catch` (putStrLn . ioeGetErrorString)
         putStrLn "Thanks for playing!"
-
-{-
-	if (cur == "") {
-	    printf("Perfect game!\n");
-	    printf("thanks for playing!\n");
-	    exit(0);
-	}
--}
 
 {-
   Permission is hereby granted, free of charge, to any person
