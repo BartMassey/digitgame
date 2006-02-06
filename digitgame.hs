@@ -208,17 +208,24 @@ getIntInput prompt range@(low, high) =
     where
         tryAgain = putStrLn "?" >> getIntInput prompt range
 
+data SelectBranch a = (:->) {
+    condition  :: Bool,
+    expression :: a
+}
+select :: [ SelectBranch a ] -> a
+select = resolve . (find condition)
+    where
+        resolve (Just x) = expression x
+        resolve Nothing = error "select with no alternative"
+
 --- Prompt and return Letter in range
 getLetterInput :: String -> Int -> IO Int
 getLetterInput prompt high =
     do  s <- getInput prompt
-        if s == "q"
-            then error "user quit"
-            else
-                let v = ord (head s) - ord 'a' in
-                if length s == 1 && v >= 0 && v < high
-                    then return v
-                    else tryAgain
+        let v = ord (head s) - ord 'a'
+        select [ (s == "q") :-> error "user quit",
+                 (length s == 1 && v >= 0 && v < high) :-> return v,
+                 otherwise :-> tryAgain ] 
     where
         tryAgain = putStrLn "?" >> getLetterInput prompt high
 
@@ -257,9 +264,9 @@ shuffle [] = return []
 shuffle [x] = return [x]
 shuffle s =
     do  r <- getStdRandom (randomR (0, (length s) - 1))
-        let (lt, rt) = splitAt r s in
-            do  more <- shuffle (lt ++ (tail rt))
-                return ((head rt) : more)
+        let (lt, rt) = splitAt r s
+        more <- shuffle (lt ++ (tail rt))
+        return ((head rt) : more)
 
 --- Play the game
 --- Autoroll argument false indicates
