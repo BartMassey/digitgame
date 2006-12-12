@@ -1,4 +1,5 @@
--- A simple program to demonstrate Gtk2Hs.
+-- Cigar Cutter GUI
+-- based on gtk2hs hello world demo
 module Main (Main.main) where
 
 import Graphics.UI.Gtk
@@ -9,32 +10,38 @@ contains parent child =
         set parent [ containerChild := child ]
         return ()
 
-rigidify :: WidgetClass a => a -> IO Alignment
-rigidify w =
+wrapAlign :: WidgetClass a =>
+                 (Float, Float, Float, Float) -> a -> IO Alignment
+wrapAlign (x, y, v, h) w =
     do
-        al <- alignmentNew 1 1 0 0
+        al <- alignmentNew x y v h
         contains al w
         return al
+
+rigidify :: WidgetClass a =>
+                 a -> IO Alignment
+rigidify = wrapAlign (1, 1, 0, 0)
 
 digitButton :: Int -> IO Button
 digitButton d =
     do
         b <- buttonNew
         set b [ buttonLabel := (show d) ]
-        onClicked b $ do putStrLn (show d)
+        onClicked b $ takeDigit d
         return b
 
 pad :: Int
 pad = 10
 
 
-digitButtons :: IO HBox
+digitButtons :: IO Alignment
 digitButtons =
     do
         b <- hBoxNew False 0
         let ds = map digitButton [1..9]
         mapM_ (>>= (contains b)) ds
-        return b
+        a <- wrapAlign (0.5, 0.5, 1, 1) b
+        return a
 
 main :: IO ()
 main = do
