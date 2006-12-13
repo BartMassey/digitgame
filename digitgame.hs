@@ -39,8 +39,6 @@ rules = ["Rules:",
          "  0, they win immediately.  Otherwise, low scorer wins.",
          "",
          "This code gives equities for optimal solo play."
----	 "This code gives equities (in terms of fraction of loss=-1.0",
----	 ".. win=1.0) for optimal two-player play."
          ]
 
 printRules :: IO ()
@@ -165,9 +163,6 @@ value state = (\(Just p)-> p) $ Map.lookup state values
                 valuehelper rs = ptableFold max $
                     sc : [ value $ state \\ r | r <- rs ]
 
---- for testing
---- main = print $ value digits
-
 --- remove whitespace from beginning and end of string
 trimWhite :: String -> String
 trimWhite =
@@ -269,8 +264,8 @@ shuffle s =
         return ((head rt) : more)
 
 --- Play the game
---- Autoroll argument false indicates
---- user will enter die rolls manually.
+--- Supplied rollers let user enter die rolls manually or
+--- roll dice randomly
 play :: IO Int -> Int -> IO ()
 play roller threshold = while playRound digits
     where
