@@ -17,10 +17,18 @@ import List
 import Monad
 import Char
 import qualified Data.Map as Map
+import Data.Maybe
 import Random
 import Array
 import IO
 import Numeric
+import ParseArgs
+
+data Options =
+    OptionASCII |
+    OptionManualRoll |
+    OptionThreshold
+    deriving (Ord, Eq, Show)
 
 digits = ['1'..'9']
 
@@ -342,13 +350,35 @@ play roller threshold = while playRound digits
                                 showDecimalRat r =
                                      showFFloat (Just 4) (fromRat r) ""
 
+
+
+argd :: [ Arg Options ]
+argd = [ Arg { argIndex = OptionASCII,
+               argName = Just "ascii",
+               argAbbr = Just 'a',
+               argData = Nothing,
+               argDesc = "Use ASCII UI" },
+         Arg { argIndex = OptionManualRoll,
+               argName = Just "manual-roll",
+               argAbbr = Just 'm',
+               argData = Nothing,
+               argDesc = "Dice will be rolled manually and input" },
+         Arg { argIndex = OptionThreshold,
+               argName = Just "threshold",
+               argAbbr = Just 't',
+               argData = argDataRequired "target-value" ArgtypeInt,
+               argDesc = "Compute probability of reaching target-value" }]
+
 main =
-    do  threshold <- getIntInput "t>" (1, rollSize)
+    do  args <- parseArgsIO ArgsComplete argd
+        let threshold = fromJust (getArgInt args OptionThreshold)
+        unless (threshold >= 1 && threshold <= rollSize)
+               (usageError args ("threshold out of range 1.." ++
+                                 show rollSize))
         putStrLn ("threshold = " ++ (allScores ! threshold))
-        let autoroll = True
-        let roller = if autoroll
-                         then rollDice
-                         else getIntInput "r>" (2,12)
+        let roller = if gotArg args OptionManualRoll
+                     then getIntInput "r>" (2,12)
+                     else rollDice
         play roller threshold `catch` (putStrLn . ioeGetErrorString)
         putStrLn "Thanks for playing!"
 
