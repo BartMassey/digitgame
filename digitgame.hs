@@ -30,8 +30,6 @@ data Options =
     OptionThreshold
     deriving (Ord, Eq, Show)
 
-digits = ['1'..'9']
-
 rules :: [ String ]
 rules = ["Rules:",
 	 "  A round is played solo, as follows",
@@ -111,6 +109,17 @@ subseqsLen (e : es) l =
 subseqs :: [a] -> [[a]]
 subseqs l = concatMap (subseqsLen l) [0 .. length l]
 
+digits = ['1'..'9']
+
+scoreList :: [ String ]
+scoreList = subseqs digits
+
+rollSize :: Int
+rollSize = length scoreList
+
+allScores :: Array Int String
+allScores = array (1, rollSize) (zip [1 .. rollSize] scoreList)
+
 type State = String
 type Vtype = Rational
 type Ptable = DupList Vtype
@@ -164,7 +173,7 @@ value target_state =
                 max_ptable = map ptable_maximize (elems (rolls state)) in
             ptableFold (+) (zipWith (fmap . (*)) dprob max_ptable)
         score_state (score, state) = (state, sum_ptable score state)
-        final_values = map score_state (zip [0 ..] (subseqs digits)) in
+        final_values = map score_state (zip [0 ..] scoreList) in
     fromJust (lookup target_state final_values)
 
 --- remove whitespace from beginning and end of string
@@ -206,15 +215,6 @@ getLetterInput prompt high = do
   if length s == 1 && v >= 0 && v < high
      then return v
      else tryAgain
-
-scoreList :: [ String ]
-scoreList = subseqs digits
-
-rollSize :: Int
-rollSize = length scoreList
-
-allScores :: Array Int String
-allScores = array (1, rollSize) (zip [1 .. rollSize] scoreList)
 
 --- iterate f on states to termination
 while :: Monad m => (a -> m a) -> a -> m ()
