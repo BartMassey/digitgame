@@ -16,7 +16,6 @@ module Main where
 import List
 import Monad
 import Char
-import qualified Data.Map as Map
 import Data.Maybe
 import Random
 import Array
