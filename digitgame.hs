@@ -183,11 +183,11 @@ atoi s  = read s
 shuffle :: [ b ] -> IO [ b ]
 shuffle [] = return []
 shuffle [x] = return [x]
-shuffle s =
-    do  r <- getStdRandom (randomR (0, (length s) - 1))
-        let (lt, rt) = splitAt r s
-        more <- shuffle (lt ++ (tail rt))
-        return ((head rt) : more)
+shuffle s = do
+  r <- getStdRandom (randomR (0, length s - 1))
+  let (lt, rt) = splitAt r s
+  more <- shuffle (lt ++ tail rt)
+  return (head rt : more)
 
 --- Play the game
 --- Supplied rollers let user enter die rolls manually or
