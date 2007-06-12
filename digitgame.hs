@@ -22,6 +22,7 @@ import Random
 import Array
 import IO
 import Numeric
+import Ratio
 import ParseArgs
 
 data Options =
@@ -50,11 +51,10 @@ rules = ["Rules:",
          ]
 
 printRules :: IO ()
---- mapM_ is the monadic map that discards the resulting list.
 printRules = mapM_ putStrLn rules
 
 --- A DupList is a run-length-encoded list.
---- Invariant: for any DupList, the count (LHS)
+--- Invariant: for any DupList run, the count (LHS)
 --- of the run is always > 0.
 newtype DupList a = DupList [ (Int, a) ]
     deriving (Show)
@@ -64,53 +64,56 @@ newtype DupList a = DupList [ (Int, a) ]
 instance Functor DupList where
     fmap f (DupList l) = DupList $ map (\(c, v)-> (c, f v)) l
 
-
-dupListZipWith :: (Eq a, Eq b, Eq c) => (a -> b -> c) -> DupList a -> DupList b -> DupList c
+--- Efficiently produce the DupList that would result from
+--- expanding the given DupLists, applying zipWith, and
+--- compressing the result back into a DupList.
+dupListZipWith :: (Eq a, Eq b, Eq c) =>
+                  (a -> b -> c) ->
+                  DupList a ->
+                  DupList b ->
+                  DupList c
 dupListZipWith _ (DupList []) _ = DupList []
 dupListZipWith _ _ (DupList []) = DupList []
 --- The trick here is to break up the longer run into pieces to fit
 --- the shorter run.                   
-dupListZipWith f (DupList ((c1, v1):a)) (DupList ((c2, v2):b)) =
-        dupconsv (c, v1 `f` v2) $ dupListZipWith f
-            (dupcons0 (c1 - c, v1) (DupList a))
-            (dupcons0 (c2 - c, v2) (DupList b))
+dupListZipWith f (DupList ((c1, v1) : a)) (DupList ((c2, v2) : b)) =
+    let c = min c1 c2
+        a' = dupcons0 (c1 - c, v1) (DupList a)
+        b' = dupcons0 (c2 - c, v2) (DupList b)
+        rs = dupListZipWith f a' b' in
+    dupconsv (c, f v1 v2) rs
     where
-        c = min c1 c2
-        --- Add an element onto the front of a DupList,
-        --- combining multiplicities appropriately.
-        dupcons0 :: Eq a => (Int, a) -> DupList a -> DupList a
-        dupcons0 (0,_) l = l
-        dupcons0 v (DupList l) = DupList $ v:l
-        dupconsv v (DupList l@[]) = DupList $ v:l
-        dupconsv v@(c1,v1) (DupList l@((c2, v2):rem))
-            | v1 == v2 = DupList $ (c1 + c2, v2):rem
-            | otherwise = DupList $ v:l
+        --- cons on a new run, discarding 0-length runs
+        dupcons0 (0, _) l = l
+        dupcons0 v (DupList l) = DupList (v : l)
+        --- cons on a new run, combining runs of equal value
+        dupconsv (c1, v1) (DupList ((c2, v2) : rs)) | v1 == v2 =
+            DupList ((c1 + c2, v1) : rs)
+        dupconsv v (DupList l) = DupList (v : l)
 
 dupListExpand :: DupList a -> [ a ]
-dupListExpand (DupList dls) =
-    concatMap (uncurry replicate) dls
+dupListExpand (DupList l) =
+    concatMap (uncurry replicate) l
 
+dupListCreate :: [ (Int, a) ] -> DupList a
+dupListCreate = DupList . filter ((/= 0) . fst)
 
 --- return all subsequences of
 --- a given length, in lex order.
 subseqsLen :: [a] -> Int -> [[a]]
 subseqsLen _ 0 = [[]]
 subseqsLen es l | length es < l = []
-subseqsLen (e:es) l =
-    (map (e:) (subseqsLen es (l - 1))) ++
-    (subseqsLen es l)
+subseqsLen (e : es) l =
+    let eseqs = map (e :) (subseqsLen es (l - 1)) in
+    eseqs ++ subseqsLen es l
         
 --- return all subsequences, in
 --- length-lex order.
 subseqs :: [a] -> [[a]]
-subseqs l =
-    concatMap (subseqsLen l) [0..(length l)]
+subseqs l = concatMap (subseqsLen l) [0 .. length l]
 
 type State = String
-
 type Vtype = Rational
---- type Vtype = Double
-
 type Ptable = DupList Vtype
 
 --- Fold up a list of ptables into a single ptable
@@ -123,114 +126,87 @@ ptableFold = foldl1 . dupListZipWith
 --- Returns a histogram of the probabilities for each
 --- of the 11 possible unique die roll values.
 dprob :: [ Vtype ]
-dprob = fmap (/ toEnum (length twodie)) $
-        (elems . (accumArray (flip (+)) 0 (minimum twodie, maximum twodie))) $
-        map (\v->(v,1)) twodie
-    where twodie = [a + b | a<-[1..6], b<-[1..6]]
+dprob =
+    let counts = [(a + b, 1) | a <- [1 .. 6], b <- [1 .. 6]]
+        mults = accumArray (+) 0 (2, 12) counts in
+    map (% 36) (elems mults)
 
---- Return a list of all possible die rolls that
---- achieve totals of 2,3..,12.
+--- Return a list of all possible die rolls that achieve
+--- totals of 2,3..,12.
+--- Strategy: Given a state, first build all subsets of that
+--- state.  For each such subset, replace it with a pair
+--- consisting of the sum of its digits (the bin index) and
+--- the subset itself.  Filter out those pairs whose index
+--- is not in the range 2..12 since these are unrealizable
+--- by die rolls.  Finally, build a histogram of lists of
+--- states indexed by die roll value.  Each bin in the
+--- histogram is thus the set of rolls that achieve the
+--- given total.
 rolls :: State -> Array Int [ State ]
---- Strategy:  Given a state, first build all subsets
---- of that state.  For each such subset, replace it with
---- a pair consisting of the sum of its digits (the bin index)
---- and the subset itself.  Filter out those pairs whose index
---- is not in the range 2..12 since these are unrealizable by
---- die rolls.  Finally, build a histogram of lists of states indexed
---- by die roll value.  Each bin in the histogram is thus the
---- set of rolls that achieve the given total.  
-rolls = accumArray (flip (:)) [] range .
-        filter (inRange range . fst) .
-        map (\set-> (sum $ map digitToInt set, set)) .
-        subseqs
-    where range = (2, 12)
+rolls =
+    accumArray (flip (:)) [] (2, 12) .
+    filter (inRange (2, 12) . fst) .
+    map (\set -> (sum (map digitToInt set), set)) .
+    subseqs
 
---- The value of a state at a given scoring threshold on a
---- given roll is the maximum value of its child states at
---- that threshold and roll, weighted appropriately.  For
---- rolls for which there is no child, the value of the
---- state at that roll is just its score.
+--- Compute the value of a state.  This is the heart of the
+--- calculation.
+--- Strategy: The value of a state at a given scoring
+--- threshold on a given roll is the maximum value of its
+--- child states at that threshold and roll, weighted
+--- appropriately.  For rolls for which there is no child,
+--- the value of the state at that roll is just its score.
 value :: State -> Ptable
-value state = (\(Just p)-> p) $ Map.lookup state values
-   where
-        values :: Map.Map State Ptable
-        values = Map.fromList $
-            map (\(score, state)-> (state, value' score state)) $
-            zip [0..] $ subseqs digits
-
-        value' :: Int -> State -> Ptable
-        value' index state = ptableFold (+) $
-            zipWith (fmap . (*)) dprob $
-            map valuehelper $
-            elems (rolls state)
-            where
-                sc = DupList $ filter ((/= 0) . fst)
-                    [(511 - index, 1), (1, 1/2), (index, 0)]
-
-                valuehelper :: [ State ] -> Ptable
-                valuehelper rs = ptableFold max $
-                    sc : [ value $ state \\ r | r <- rs ]
+value target_state =
+    let sum_ptable index state =
+            let score = dupListCreate [(511 - index, 1), (1, 1%2), (index, 0)]
+                values rs = score : [ value (state \\ r) | r <- rs ]
+                ptable_maximize rs = ptableFold max (values rs)
+                max_ptable = map ptable_maximize (elems (rolls state)) in
+            ptableFold (+) (zipWith (fmap . (*)) dprob max_ptable)
+        score_state (score, state) = (state, sum_ptable score state)
+        final_values = map score_state (zip [0 ..] (subseqs digits)) in
+    fromJust (lookup target_state final_values)
 
 --- remove whitespace from beginning and end of string
 trimWhite :: String -> String
 trimWhite =
-    reverse . trimWhiteHead . reverse . trimWhiteHead
+    reverse . trim_head . reverse . trim_head
     where
-        --- remove whitespace from beginning of string
-        trimWhiteHead :: String -> String
-        trimWhiteHead (' ':ss) = trimWhite ss
-        trimWhiteHead ('\t':ss) = trimWhite ss
-        trimWhiteHead ss = ss
+      trim_head = dropWhile (\c -> c == ' ' || c == '\t')
 
 --- Prompt and return trimmed string
 getInput :: String -> IO String
-getInput prompt =
-    do  hSetBuffering stdin LineBuffering
-        hSetBuffering stdout NoBuffering
-        putStr prompt
-        putStr " "
-        r <- getLine
-        return (trimWhite r)
+getInput prompt = do
+  hSetBuffering stdin LineBuffering
+  hSetBuffering stdout NoBuffering
+  putStr prompt
+  putStr " "
+  r <- getLine
+  return (trimWhite r)
 
 --- Prompt and return Int in range
 getIntInput :: String -> (Int, Int) -> IO Int
-getIntInput prompt range@(low, high) =
-    do  s <- getInput prompt
-        if s == "q"
-            then error "user quit"
-            else
-                do
-                    t <- ((readIO s) :: IO Int) `catch`
-                         (\e ->
-                              if isUserError e
-                                  then tryAgain
-                                  else ioError e)
-                    if (t >= low) && (t <= high)
-                        then return t
-                        else tryAgain
-    where
-        tryAgain = putStrLn "?" >> getIntInput prompt range
-
-data SelectBranch a = (:->) {
-    condition  :: Bool,
-    expression :: a
-}
-select :: [ SelectBranch a ] -> a
-select = resolve . (find condition)
-    where
-        resolve (Just x) = expression x
-        resolve Nothing = error "select with no alternative"
+getIntInput prompt range@(low, high) = do
+  s <- getInput prompt
+  when (s == "q") (error "user quit")
+  let tryAgain = putStrLn "?" >> getIntInput prompt range
+  let ue e = if isUserError e then tryAgain else ioError e
+  t <- ((readIO s) :: IO Int) `catch` ue
+  if (t >= low) && (t <= high)
+     then return t
+     else tryAgain
 
 --- Prompt and return Letter in range
 getLetterInput :: String -> Int -> IO Int
-getLetterInput prompt high =
-    do  s <- getInput prompt
-        let v = ord (head s) - ord 'a'
-        select [ (s == "q") :-> error "user quit",
-                 (length s == 1 && v >= 0 && v < high) :-> return v,
-                 otherwise :-> tryAgain ] 
-    where
-        tryAgain = putStrLn "?" >> getLetterInput prompt high
+getLetterInput prompt high = do
+  s <- getInput prompt
+  when (s == "q") (error "user quit")
+  let v = ord (head s) - ord 'a'
+  let tryAgain = putStrLn "?" >> getLetterInput prompt high
+  if length s == 1 && v >= 0 && v < high
+     then return v
+     else tryAgain
 
 scoreList :: [ String ]
 scoreList = subseqs digits
@@ -239,8 +215,7 @@ rollSize :: Int
 rollSize = length scoreList
 
 allScores :: Array Int String
-allScores =
-    array (1, rollSize) (zip [1..rollSize] scoreList)
+allScores = array (1, rollSize) (zip [1 .. rollSize] scoreList)
 
 --- iterate f on states to termination
 while :: Monad m => (a -> m a) -> a -> m ()
@@ -275,82 +250,74 @@ shuffle s =
 --- Supplied rollers let user enter die rolls manually or
 --- roll dice randomly
 play :: IO Int -> Int -> IO ()
-play roller threshold = while playRound digits
+play roller threshold =
+    while playRound digits
     where
         --- Handle continuing game.
         playRound :: State -> IO State
-        playRound cur =
-            do  roll <- roller
-                putStrLn (cur ++ " ... " ++ (show roll))
-                let moves = reverse ((rolls cur) ! roll)
-                if (length moves) == 0
-                    then endGame
-                    else nextMove moves
-            where
-                --- Handle end of game.
-                endGame :: IO State
-                endGame =
-                    do
-                        if cur == ""
-                            then putStrLn "Perfect game!"
-                            else return ()
-                        case compare (atoi cur)
-                             (atoi (allScores ! threshold)) of
-                            LT -> fail "You win!"
-                            GT -> fail "You lose."
-                            EQ -> fail "A tie."
-                --- Actually step through a move
-                nextMove :: [ State ] -> IO State
-                nextMove moves =
-                    do  let l = length moves
-                        smoves <- shuffle moves
-                        showMoves smoves
-                        m <- case l of
-                            1 ->
-                                do  putStrLn "c> a"
-                                    return (head smoves)
-                            _ ->
-                                do  r <- getLetterInput "c>" l
-                                    let m = smoves !! r
-                                    valueMoves moves m
-                                    return m
-                        return (cur \\ m)
+        playRound cur = do
+          roll <- roller
+          putStrLn (cur ++ " ... " ++ (show roll))
+          let moves = reverse ((rolls cur) ! roll)
+          if (length moves) == 0
+             then endGame
+             else nextMove moves
+          where
+            --- Handle end of game.
+            endGame :: IO State
+            endGame = do
+              when (cur == "") (putStrLn "Perfect game!")
+              let threshold_score = allScores ! threshold
+              case compare (atoi cur) (atoi threshold_score) of
+                LT -> fail "You win!"
+                GT -> fail "You lose."
+                EQ -> fail "A tie."
+            --- Actually step through a move
+            nextMove :: [ State ] -> IO State
+            nextMove moves = do
+              let l = length moves
+              smoves <- shuffle moves
+              showMoves smoves
+              m <- case l of
+                     1 -> do
+                        putStrLn "c> a"
+                        return (head smoves)
+                     _ -> do
+                        r <- getLetterInput "c>" l
+                        let m = smoves !! r
+                        valueMoves moves m
+                        return m
+              return (cur \\ m)
+              where
+                --- Print the move list
+                showMoves :: [ State ] -> IO ()
+                showMoves moves =
+                    zipWithM_ showMove ['a' ..] moves
                     where
-                        --- Print the move list
-                        showMoves :: [ State ] -> IO ()
-                        showMoves moves =
-                            zipWithM_ showMove ['a'..] moves
-                            where
-                                showMove letter take = 
-                                    putStrLn ((letter : ") ") ++
-                                              take ++
-                                              " -> " ++
-                                              (cur \\ take))
-                        --- Print the move values
-                        valueMoves :: [ State ] -> State -> IO ()
-                        valueMoves moves choice =
-                            mapM_ valueMove moves
-                            where
-                                valueMove take = 
-                                    putStrLn ((choiceChar take) ++
-                                              take ++
-                                              " -> " ++
-                                              (cur \\ take) ++
-                                              " = " ++
-                                              (choiceVal take))
-                                choiceChar take =
-                                    if take == choice
-                                        then "*"
-                                        else " "
-                                choiceVal take =
-                                    showDecimalRat
-                                      ((dupListExpand
-                                        (value (cur \\ take))) !!
-                                        (512 - threshold))
-                                showDecimalRat r =
-                                     showFFloat (Just 4) (fromRat r) ""
-
-
+                      showMove letter take = 
+                          putStrLn ((letter : ") ") ++
+                                    take ++ " -> " ++ (cur \\ take))
+                --- Print the move values
+                valueMoves :: [ State ] -> State -> IO ()
+                valueMoves moves choice =
+                    mapM_ valueMove moves
+                    where
+                      valueMove take = 
+                          putStrLn ((choiceChar take) ++
+                                    take ++ " -> " ++
+                                    (cur \\ take) ++ " = " ++
+                                    (choiceVal take))
+                      choiceChar take =
+                          if take == choice
+                          then "*"
+                          else " "
+                      choiceVal take =
+                          let vlist = value (cur \\ take)
+                              vals = dupListExpand vlist
+                              elem = vals !! (512 - threshold) in
+                          showDecimalRat elem
+                      showDecimalRat r =
+                          showFFloat (Just 4) (fromRat r) ""
 
 argd :: [ Arg Options ]
 argd = [ Arg { argIndex = OptionASCII,
