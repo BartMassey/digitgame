@@ -5,18 +5,12 @@
 HC = ghc
 HCFLAGS = -O2 # -prof -auto-all
 TARGETS = digitgame
-SRCS = digitgame.hs
+SRCS = digitgame.hs Subseqs.hs DupList.hs
 
 all: $(TARGETS)
 
 digitgame: $(SRCS)
 	$(HC) $(HCFLAGS) --make -o digitgame digitgame.hs
-
-sinewave: sinewave.hs $(SRCS)
-	$(HC) $(HCFLAGS) --make -o sinewave sinewave.hs
-
-readtest: readtest.hs $(SRCS)
-	$(HC) $(HCFLAGS) --make -o readtest readtest.hs
 
 clean:
 	rm -f *.o *.hi *.hp *.prof $(TARGETS)
