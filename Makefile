@@ -5,14 +5,13 @@
 HC = ghc
 HCFLAGS = -O2 # -prof -auto-all
 TARGETS = digitgame dggui
-SRCS = digitgame.hs Subseqs.hs DupList.hs
 
 all: $(TARGETS)
 
-digitgame: $(SRCS)
+digitgame: digitgame.hs Subseqs.hs DupList.hs
 	$(HC) $(HCFLAGS) --make -o digitgame digitgame.hs
 
-dggui: $(SRCS)
+dggui: dggui.hs
 	$(HC) $(HCFLAGS) --make -o dggui dggui.hs
 
 clean:
