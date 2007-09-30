@@ -1,7 +1,7 @@
 {-
 #
 # digitgame
-# Copyright 2005 Bart Massey <bart@cs.pdx.edu> and
+# Copyright 2005-2007 Bart Massey <bart@cs.pdx.edu> and
 # Jamey Sharp <jamey@cs.pdx.edu>
 # ALL RIGHTS RESERVED
 # See the end of this file for licensing information
