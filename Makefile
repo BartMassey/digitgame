@@ -4,13 +4,16 @@
 
 HC = ghc
 HCFLAGS = -O2 # -prof -auto-all
-TARGETS = digitgame
+TARGETS = digitgame dggui
 SRCS = digitgame.hs Subseqs.hs DupList.hs
 
 all: $(TARGETS)
 
 digitgame: $(SRCS)
 	$(HC) $(HCFLAGS) --make -o digitgame digitgame.hs
+
+dggui: $(SRCS)
+	$(HC) $(HCFLAGS) --make -o dggui dggui.hs
 
 clean:
 	rm -f *.o *.hi *.hp *.prof $(TARGETS)
