@@ -1,6 +1,7 @@
 module Main where
 
 import Random
+import Data.IORef
 import Graphics.UI.Gtk
 
 --- from the Haskell 98 report
@@ -32,12 +33,15 @@ main = do
   boxPackStart die_box_2 die_1 PackNatural 0
   boxPackStart die_box_2 die_2 PackNatural 0
   boxPackStart die_box die_box_2 PackRepel 0
+  d1 <- newIORef 1
+  d2 <- newIORef 6
   let dice_roller = do
-         (d1, d2) <- roll_dice
-         imageSetFromPixbuf die_1 (die_images !! (d1 - 1))
-         imageSetFromPixbuf die_2 (die_images !! (d2 - 1))
-         return (d1, d2)
-  (d1, d2) <- dice_roller
+         (d1', d2') <- roll_dice
+         imageSetFromPixbuf die_1 (die_images !! (d1' - 1))
+         imageSetFromPixbuf die_2 (die_images !! (d2' - 1))
+         writeIORef d1 d1'
+         writeIORef d2 d2'
+  dice_roller
   die_hsep <- hSeparatorNew
   button_box <- hBoxNew True 0
   digit_buttons <- mapM (\i -> toggleButtonNewWithLabel (show i)) [1..9]
@@ -47,8 +51,10 @@ main = do
                             a <- toggleButtonGetActive
                                  (digit_buttons !! (i - 1))
                             if a then return i else return 0) [1..9]
-         if (sum clicked) == d1 + d2
-            then onClicked go_button (do (d1, d2) <- dice_roller ; return ())
+         d1' <- readIORef d1
+         d2' <- readIORef d2
+         if sum clicked == d1' + d2' 
+            then onClicked go_button dice_roller
             else onClicked go_button (return ())
          return ()
   let set_up_button (b, i) = do
