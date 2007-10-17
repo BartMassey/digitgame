@@ -38,7 +38,12 @@ main = do
   d1 <- newIORef 1
   d2 <- newIORef 6
   digits <- newIORef [1..9]
+  digit_buttons <- mapM (\i -> toggleButtonNewWithLabel (show i)) [1..9]
   let dice_roller = do
+         mapM_ (\w -> do a <- toggleButtonGetActive w
+                         when a (do widgetSetSensitivity w False
+                                    toggleButtonSetActive w False))
+               digit_buttons
          (d1', d2') <- roll_dice
          imageSetFromPixbuf die_1 (die_images !! (d1' - 1))
          imageSetFromPixbuf die_2 (die_images !! (d2' - 1))
@@ -48,18 +53,20 @@ main = do
   --- set up rest of boxes
   die_hsep <- hSeparatorNew
   button_box <- hBoxNew True 0
-  digit_buttons <- mapM (\i -> toggleButtonNewWithLabel (show i)) [1..9]
   --- the Go button requires special handling
   go_button <- buttonNewWithLabel "Go"
+  widgetSetSensitivity go_button False
   go_state <- newIORef Nothing
   let fix_go_state new_state = do
          old_state <- readIORef go_state
          case old_state of
            Nothing -> when new_state (do
                         cid <- onClicked go_button dice_roller
+                        widgetSetSensitivity go_button True
                         writeIORef go_state (Just cid))
            Just cid -> unless new_state (do
                          signalDisconnect cid
+                         widgetSetSensitivity go_button False
                          writeIORef go_state Nothing)
   let update_status i = do
          clicked <- mapM (\i -> do
