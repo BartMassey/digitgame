@@ -6,9 +6,8 @@ import Data.IORef
 import Control.Monad
 import Graphics.UI.Gtk
 
---- from the Haskell 98 report
 roll_die :: IO Int
-roll_die = getStdRandom (randomR (1,6))
+roll_die = randomRIO (1,6)
 
 roll_dice :: IO (Int, Int)
 roll_dice =
@@ -26,7 +25,7 @@ main = do
   set window [windowDefaultWidth := 700, windowDefaultHeight := 70,
               containerChild := box, containerBorderWidth := 10]
   --- set up dice
-  die_images <- mapM (\i -> pixbufNewFromFile ("gnome-dice-" ++
+  die_images <- mapM (\i -> pixbufNewFromFile ("img/gnome-dice-" ++
                                               show i ++ ".svg")) [1..6]
   die_box <- hBoxNew False 0
   die_box_2 <- hBoxNew False 0
