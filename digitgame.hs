@@ -22,7 +22,7 @@ import Array
 import IO
 import Numeric
 import Ratio
-import ParseArgs
+import System.Console.ParseArgs
 
 import DupList
 import Subseqs
