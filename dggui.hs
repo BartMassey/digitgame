@@ -1,10 +1,10 @@
 module Main where
 
-import Random
-import Data.Maybe
-import Data.IORef
 import Control.Monad
+import Data.IORef
+import Data.Maybe
 import Graphics.UI.Gtk
+import Random
 
 roll_die :: IO Int
 roll_die = randomRIO (1,6)
@@ -28,12 +28,12 @@ main = do
   die_images <- mapM (\i -> pixbufNewFromFile ("img/gnome-dice-" ++
                                               show i ++ ".svg")) [1..6]
   die_box <- hBoxNew False 0
-  die_box_2 <- hBoxNew False 0
+  die_box_inner <- hBoxNew False 0
   die_1 <- imageNew
   die_2 <- imageNew
-  boxPackStart die_box_2 die_1 PackNatural 0
-  boxPackStart die_box_2 die_2 PackNatural 0
-  boxPackStart die_box die_box_2 PackRepel 0
+  boxPackStart die_box_inner die_1 PackNatural 0
+  boxPackStart die_box_inner die_2 PackNatural 0
+  boxPackStart die_box die_box_inner PackRepel 0
   d1 <- newIORef 1
   d2 <- newIORef 6
   digits <- newIORef [1..9]
@@ -59,14 +59,14 @@ main = do
   let fix_go_state new_state = do
          old_state <- readIORef go_state
          case old_state of
-           Nothing -> when new_state (do
+           Nothing -> when new_state $ do
                         cid <- onClicked go_button dice_roller
                         widgetSetSensitivity go_button True
-                        writeIORef go_state (Just cid))
-           Just cid -> unless new_state (do
+                        writeIORef go_state (Just cid)
+           Just cid -> unless new_state $ do
                          signalDisconnect cid
                          widgetSetSensitivity go_button False
-                         writeIORef go_state Nothing)
+                         writeIORef go_state Nothing
   let update_status i = do
          clicked <- mapM (\i -> do
                             a <- toggleButtonGetActive
