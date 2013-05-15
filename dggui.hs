@@ -9,7 +9,7 @@ import Control.Monad
 import Data.IORef
 import Data.Maybe
 import Graphics.UI.Gtk
-import Random
+import System.Random
 
 roll_die :: IO Int
 roll_die = randomRIO (1,6)
