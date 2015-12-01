@@ -1,5 +1,4 @@
--- Copyright © 2005-2007 Bart Massey <bart@cs.pdx.edu> 
---   and Jamey Sharp <jamey@cs.pdx.edu>
+-- Copyright © 2005 Bart Massey and Jamey Sharp
 -- [This program is licensed under the "MIT License".]
 -- Please see the file COPYING in the source
 -- distribution of this software for license terms.
@@ -23,6 +22,8 @@ import System.IO
 import Numeric
 import Data.Ratio
 import System.Console.ParseArgs
+import Control.Exception
+import System.IO.Error
 
 import DupList
 import Subseqs
