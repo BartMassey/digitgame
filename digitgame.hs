@@ -13,15 +13,15 @@
 
 module Main where
 
-import List
-import Monad
-import Char
+import Data.List
+import Control.Monad
+import Data.Char
 import Data.Maybe
-import Random
-import Array
-import IO
+import System.Random
+import Data.Array
+import System.IO
 import Numeric
-import Ratio
+import Data.Ratio
 import System.Console.ParseArgs
 
 import DupList
