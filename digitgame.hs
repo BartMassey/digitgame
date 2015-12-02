@@ -74,7 +74,7 @@ type Ptable = DupList Vtype
 --- Give an error if there are no tables to combine;
 --- the way this is used that should never happen.
 ptableFold :: (Vtype -> Vtype -> Vtype) -> [ Ptable ] -> Ptable
-ptableFold = foldl1 . dupListZipWith
+ptableFold = foldl1' . dupListZipWith
 
 --- Returns a histogram of the probabilities for each
 --- of the 11 possible unique die roll values.
