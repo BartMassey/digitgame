@@ -36,7 +36,7 @@ data Options =
 
 rules :: [ String ]
 rules = ["Rules:",
-	 "  A round is played solo, as follows",
+         "  A round is played solo, as follows",
          "    1. start with the sequence of digits 1..9",
          "    2. roll two 6-sided dice to obtain a sum 2..12",
          "    3. if there exists a set of digits in the sequence that add",
