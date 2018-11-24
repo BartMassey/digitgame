@@ -12,11 +12,11 @@ the game solitaire. I wrote this one all by myself.
 
 The other program, written cooperatively with Jamey Sharp,
 is a solver for perfect play in the solitaire variant of the
-game; it can compute best-expected move or move with best
-chance of reaching a given score threshold. This latter
-program has a textual "tutor" interface that allows the
-player to pick a move and then shows what the expected
-payoffs were for the various choices.
+game; it computes the move with best chance of reaching a
+given score threshold. This latter program has a textual
+"tutor" interface that allows the player to pick a move and
+then shows what the expected payoffs were for the various
+choices.
 
 This game was introduced to me by Andreas Junghanns, who
 also built a solver for it. His agrees with mine, so I hope

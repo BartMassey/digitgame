@@ -29,7 +29,6 @@ import DupList
 import Subseqs
 
 data Options =
-    OptionASCII |
     OptionManualRoll |
     OptionThreshold
     deriving (Ord, Eq, Show)
@@ -264,12 +263,7 @@ play roller threshold =
                           showFFloat (Just 4) (fromRat r) ""
 
 argd :: [ Arg Options ]
-argd = [ Arg { argIndex = OptionASCII,
-               argName = Just "ascii",
-               argAbbr = Just 'a',
-               argData = Nothing,
-               argDesc = "Use ASCII UI" },
-         Arg { argIndex = OptionManualRoll,
+argd = [ Arg { argIndex = OptionManualRoll,
                argName = Just "manual-roll",
                argAbbr = Just 'm',
                argData = Nothing,
