@@ -30,7 +30,7 @@ homepage:            http://github.com/BartMassey/digitgame
 license:             MIT
 
 -- The file containing the license text.
-license-file:        LICENSE
+license-file:        COPYING
 
 -- The package author(s).
 author:              Bart Massey
