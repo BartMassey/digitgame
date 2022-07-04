@@ -70,23 +70,24 @@ executable digitgame
   -- Base language which the package is written in.
   default-language:    Haskell2010
 
-executable dggui
-  -- .hs or .lhs file containing the Main module.
-  main-is:             dggui.hs
-
-  -- Modules included in this executable, other than Main.
-  other-modules: DupList, Subseqs
-
-  -- LANGUAGE extensions used by modules in this package.
-  -- other-extensions:
-
-  -- Other library packages from which modules are imported.
-  build-depends:       base >=4.12, array >=0.5, random >=1.1,
-                       parseargs, gtk
-
-  -- Directories containing source files.
-  hs-source-dirs: .
-
-  -- Base language which the package is written in.
-  default-language:    Haskell2010
+-- XXX Cannot build with gtk for now. YMMV.
+-- executable dggui
+--   -- .hs or .lhs file containing the Main module.
+--   main-is:             dggui.hs
+-- 
+--   -- Modules included in this executable, other than Main.
+--   other-modules: DupList, Subseqs
+-- 
+--   -- LANGUAGE extensions used by modules in this package.
+--   -- other-extensions:
+-- 
+--   -- Other library packages from which modules are imported.
+--   build-depends:       base >=4.12, array >=0.5, random >=1.1,
+--                        parseargs, gtk
+-- 
+--   -- Directories containing source files.
+--   hs-source-dirs: .
+-- 
+--   -- Base language which the package is written in.
+--   default-language:    Haskell2010
 
